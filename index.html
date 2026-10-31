@@ -3879,12 +3879,23 @@ function playJapanese(text, type = "word", options = {}){
   markFeedback();
   let playbackStarted = false;
   let fallbackTriggered = false;
+  let singleShotTimer = null;
   const cleanupAudio = () => {
+    if (singleShotTimer) clearTimeout(singleShotTimer);
+    singleShotTimer = null;
     audio.onplaying = null;
     audio.onended = null;
     audio.onerror = null;
     if (activeKanaAudio === audio) activeKanaAudio = null;
     resetFeedback();
+  };
+  const stopAfterFirstPronunciation = () => {
+    if (!isCurrentPlayback() || activeKanaAudio !== audio) return;
+    // The Wikimedia kana recordings contain the same mora three times,
+    // spaced about one second apart. Stop during the first silent gap.
+    audio.pause();
+    try { audio.currentTime = 0; } catch(e){}
+    cleanupAudio();
   };
   const fallback = () => {
     if (fallbackTriggered || playbackStarted || !isCurrentPlayback()) return;
@@ -3892,7 +3903,10 @@ function playJapanese(text, type = "word", options = {}){
     cleanupAudio();
     speakWithTTS();
   };
-  audio.onplaying = () => { playbackStarted = true; };
+  audio.onplaying = () => {
+    playbackStarted = true;
+    singleShotTimer = setTimeout(stopAfterFirstPronunciation, 650);
+  };
   audio.onended = cleanupAudio;
   audio.onerror = () => {
     if (playbackStarted) cleanupAudio();
@@ -3900,7 +3914,10 @@ function playJapanese(text, type = "word", options = {}){
   };
   const playPromise = audio.play();
   if (playPromise && typeof playPromise.then === "function") {
-    playPromise.then(() => { playbackStarted = true; }).catch(fallback);
+    playPromise.then(() => {
+      playbackStarted = true;
+      if (!singleShotTimer) singleShotTimer = setTimeout(stopAfterFirstPronunciation, 650);
+    }).catch(fallback);
   }
   return true;
 }
@@ -6813,7 +6830,6 @@ const Gojuon = {
     $("#kanaScrim").classList.add("show");
   },
   speak(kana, romaji){
-    Audio.click();
     playJapanese(kana, "kana", { feedbackEl: $("#playKana") });
   }
 };
